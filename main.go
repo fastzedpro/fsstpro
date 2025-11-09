@@ -1,47 +1,35 @@
 package main
 
 import (
-	"io"
-	"net"
-	"os"
-	"sync"
+    "io"
+    "net"
+    "os"
 )
-func main() {
-        listenAddr := ":" + os.Getenv("PORT")
-        targetAddr := os.Getenv("V2RAY_SERVER_IP") + ":80"
-        ln, err := net.Listen("tcp", listenAddr)
-        if err != nil {
-                return
-        }
-        for {
-                conn, err := ln.Accept()
-                if err != nil {
-                        continue
-                }
-                go handleConnection(conn, targetAddr)
-        }
+
+func handleClient(clientConn net.Conn, targetAddr string) {
+    defer clientConn.Close()
+
+    remoteConn, _ := net.Dial("tcp", targetAddr)
+    defer remoteConn.Close()
+
+    go func() {
+        io.Copy(remoteConn, clientConn)
+    }()
+
+    io.Copy(clientConn, remoteConn)
 }
-func handleConnection(src net.Conn, targetAddr string) {
-        dst, err := net.Dial("tcp", targetAddr)
+
+func main() {
+    listenAddr := ":" + os.Getenv("PORT")
+    targetAddr := os.Getenv("V2RAY_SERVER_IP") + ":80"
+    listener, _ := net.Listen("tcp", listenAddr)
+    defer listener.Close()
+
+    for {
+        clientConn, err := listener.Accept()
         if err != nil {
-                src.Close()
-		return
+            continue
         }
-		
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-        go func() {
-                io.Copy(dst, src)
-                wg.Done()
-        }()
-
-        go func() {
-                io.Copy(src, dst)
-                wg.Done()
-        }()
-		
-        wg.Wait()
-	src.Close()
-	dst.Close()
+        go handleClient(clientConn, targetAddr)
+    }
 }
